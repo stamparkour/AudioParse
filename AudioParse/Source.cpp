@@ -37,11 +37,12 @@ struct Note {
 	float length;
 
 	int Append(char* str, size_t s, float& time, float& hz) {
+		float t = time;
 		time += length;
 		float h = toHz(name);
 		float j = h - hz;
 		hz = h;
-		return sprintf_s(str, s, "(%f,%f)", time, j);
+		return sprintf_s(str, s, "(%f,%f)", t, j);
 	}
 };
 
