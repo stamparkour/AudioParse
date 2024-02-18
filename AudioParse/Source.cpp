@@ -68,11 +68,11 @@ int main(int argc, const char* argv[]) {
 		notes.push_back(n);
 	}
 
-	char out[4096];
+	char out[8192];
 	int index = 0;
 	out[index++] = '[';
 	for (size_t i = 0; i < notes.size(); i++) {
-		index += notes[i].Append(out + index, 4090 - index);
+		index += notes[i].Append(out + index, 8192 - index);
 		if (i != notes.size() - 1) out[index++] = ',';
 	}
 	out[index++] = ']';
