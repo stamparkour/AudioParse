@@ -29,19 +29,24 @@ float toHz(char name[3]) {
 
 	if (name[0] >= 'C') note -= 12;
 	note += (o - 4) * 12;
-	return 440.0 * pow(2, note / 12.0);
+	return 440.0f * powf(2, note / 12.0f);
 }
 
 struct Note {
 	char name[3];
 	float length;
 
-	int Append(char* str, size_t s) {
-		return sprintf_s(str, s, "(%f,%f)", length, toHz(name));
+	int Append(char* str, size_t s, float& time, float& hz) {
+		time += length;
+		float h = toHz(name);
+		float j = h - hz;
+		hz = h;
+		return sprintf_s(str, s, "(%f,%f)", time, j);
 	}
 };
 
 std::vector<Note> notes{};
+char out[16384];
 int main(int argc, const char* argv[]) {
 	std::cout << "enter file path:" << std::endl;
 	char file[256];
@@ -68,11 +73,12 @@ int main(int argc, const char* argv[]) {
 		notes.push_back(n);
 	}
 
-	char out[8192];
 	int index = 0;
 	out[index++] = '[';
+	float hz = 0;
+	float time = 0;
 	for (size_t i = 0; i < notes.size(); i++) {
-		index += notes[i].Append(out + index, 8192 - index);
+		index += notes[i].Append(out + index, 16384 - index, time, hz);
 		if (i != notes.size() - 1) out[index++] = ',';
 	}
 	out[index++] = ']';
