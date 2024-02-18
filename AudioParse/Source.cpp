@@ -78,5 +78,6 @@ int main(int argc, const char* argv[]) {
 	out[index++] = ']';
 	out[index] = 0;
 	printf(out);
-	getchar();
+	char arr[256];
+	std::cin >> arr;
 }
