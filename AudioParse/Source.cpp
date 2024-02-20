@@ -46,15 +46,7 @@ struct Note {
 	}
 };
 
-std::vector<Note> notes{};
-char out[16384];
-int main(int argc, const char* argv[]) {
-	std::cout << "enter file path:" << std::endl;
-	char file[256];
-	std::cin >> file;
-	std::fstream s {file,std::ios::in};
-	if (!s)
-		throw 2;
+void parseTxt(std::fstream& s) {
 	while (s.good()) {
 		char str[256];
 		s.getline(str, 256);
@@ -63,9 +55,9 @@ int main(int argc, const char* argv[]) {
 		float length;
 
 		if (str[0] == 0) continue;
-		if(sscanf_s(str, "%3c %f", name, 3, &length) != 2) 
+		if (sscanf_s(str, "%3c %f", name, 3, &length) != 2)
 			throw 1;
-		
+
 		Note n{};
 		n.name[0] = name[0];
 		n.name[1] = name[1];
@@ -87,4 +79,35 @@ int main(int argc, const char* argv[]) {
 	printf(out);
 	char arr[256];
 	std::cin >> arr;
+}
+
+void parseMidi(std::fstream& s) {
+	s.seekg(0, s.end);
+	int length = s.tellg();
+	s.seekg(0, s.beg);
+
+	char* a = new char[length];
+	s.read(a, length);
+
+	uint16_t divisions = *(uint16_t*)(a + 12);
+}
+
+std::vector<Note> notes{};
+char out[16384];
+int main(int argc, const char* argv[]) {
+	std::cout << "enter file path:" << std::endl;
+	char file[256];
+	std::cin >> file;
+	std::fstream stream {file,std::ios::in};
+	if (!stream)
+		throw 2;
+
+	int i;
+	for (i = 0; file[i]; i++);
+	for (; i > 0 && file[i] != '.'; i--);
+	if (i == 0)
+		throw 3;
+	i++;
+	if (!strcmp(file + i, "txt")) parseTxt(stream);
+	if (!strcmp(file + i, "midi")) parseMidi(stream);
 }
