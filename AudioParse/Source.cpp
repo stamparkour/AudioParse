@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <iostream>
-
+#include "midi.h"
 
 float toHz(char name[3]) {
 	if (name[0] == '0') return 0;
@@ -32,19 +32,51 @@ float toHz(char name[3]) {
 	return 440.0f * powf(2, note / 12.0f);
 }
 
+float toHZ(unsigned char midi) {
+	if (midi == 0) return 0;
+	int note =  midi - 69;
+	return 440.0f * powf(2, note / 12.0f);
+}
+
 struct Note {
-	char name[3];
+	float HZ;
 	float length;
+	Note(char name[3], float length) {
+		this->length = length;
+		HZ = toHz(name);
+	}
+
+	Note(int midiNote, float length) {
+		this->length = length;
+		HZ = toHZ(midiNote);
+	}
 
 	int Append(char* str, size_t s, float& time, float& hz) {
 		float t = time;
 		time += length;
-		float h = toHz(name);
-		float j = h - hz;
-		hz = h;
-		return sprintf_s(str, s, "(%f,%f)", t, j);
+		float j = HZ - hz;
+		hz = HZ;
+		return sprintf_s(str, s, "(%g,%.1f)", t, j);
 	}
 };
+
+std::vector<Note> notes{};
+char out[50000];
+
+void printNotes() {
+	int index = 0;
+	out[index++] = '[';
+	float hz = 0;
+	float time = 0;
+	for (size_t i = 0; i < notes.size(); i++) {
+		index += notes[i].Append(out + index, sizeof(out) - index, time, hz);
+		if (i != notes.size() - 1) out[index++] = ',';
+	}
+	out[index++] = ']';
+	out[index] = 0;
+	printf(out);
+	char arr[256];
+}
 
 void parseTxt(std::fstream& s) {
 	while (s.good()) {
@@ -58,27 +90,181 @@ void parseTxt(std::fstream& s) {
 		if (sscanf_s(str, "%3c %f", name, 3, &length) != 2)
 			throw 1;
 
-		Note n{};
-		n.name[0] = name[0];
-		n.name[1] = name[1];
-		n.name[2] = name[2];
-		n.length = length;
+		Note n{ name, length};
 		notes.push_back(n);
 	}
 
-	int index = 0;
-	out[index++] = '[';
-	float hz = 0;
-	float time = 0;
-	for (size_t i = 0; i < notes.size(); i++) {
-		index += notes[i].Append(out + index, 16384 - index, time, hz);
-		if (i != notes.size() - 1) out[index++] = ',';
+	printNotes();
+}
+
+int parseVariedLengthValue(const uint8_t* ptr, int& v) {
+	v = 0;
+	int a = 0;
+	do {
+		v <<= 7;
+		v |= *ptr & 0x7F;
+	} while (*(ptr + a++) & 0x80);
+	return a;
+}
+
+struct Tempo {
+	int time;
+	float spt;//seconds per tick
+	int endTime = -1;
+};
+
+
+uint8_t keySigneture = 0;
+uint8_t keyMode = 0;
+int totalTicks = 0;
+int prevTotalTicks = 0;
+int prevNote = 0;
+int depth = 0;
+int depthTarget = 0;
+int timeDivision = 0;
+std::vector<Tempo> tempos{ };
+int ticksPerBeat = 0;
+float totalTime = 0;
+float prevTotalTime = 0;
+
+
+unsigned short swapByteOrderWord(unsigned short s) {
+	return (((unsigned char*) & s)[0] << 8) | (((unsigned char*)&s)[1] << 0);
+}
+
+Tempo getTempo(int tick) {
+	for (int i = 0; i < tempos.size(); i++) {
+		if (tick < tempos[i].time) return tempos[i-1];
 	}
-	out[index++] = ']';
-	out[index] = 0;
-	printf(out);
-	char arr[256];
-	std::cin >> arr;
+	return tempos[tempos.size()-1];
+}
+
+int parseMidiMessage(uint8_t status, uint8_t* k) {
+	int high = status >> 4;
+	int low = status & 0xF;
+
+	float timeGap = (totalTime - prevTotalTime);
+	switch (high) {
+	case 0x8:
+		notes.push_back(Note{ (uint8_t)prevNote, timeGap });
+		prevNote = 0;
+		prevTotalTime = totalTime;
+		return 2;
+	case 0x9:
+		if (k[1] == 0 && depth >= depthTarget) {
+			notes.push_back(Note{ prevNote, timeGap });
+			prevNote = 0;
+			depth = 0;
+			prevTotalTime = totalTime;
+		}
+		else {
+			if (timeGap != 0) depth = 0;
+			if (prevNote == 0) {
+				if (timeGap > 0) {
+					notes.push_back(Note{ 0, timeGap });
+					prevTotalTime = totalTime;
+				}
+			}
+			else if(depth == depthTarget) {
+				notes.push_back(Note{ (uint8_t)prevNote, timeGap });
+				prevTotalTime = totalTime;
+			}
+			if(depth == depthTarget) prevNote = k[0];
+			depth++;
+		}
+		return 2;
+	case 0xA:
+	case 0xB:
+	case 0xE:
+		return 2;
+	case 0xC:
+	case 0xD:
+		return 1;
+	case 0xF:
+		switch (low) {
+		case 0x0: {
+			int i = 2;
+			while (k[i] == k[1] && k[i + 1] == 0xF7) i++;
+			return i; }
+		case 0x2:
+			return 2;
+		case 0x3:
+			return 1;
+		default:
+			return 0;
+		}
+	}
+}
+
+void parseMidiMetaEvent(uint8_t code, int length, uint8_t* k) {
+	switch (code) {
+	case 0x51://tempo
+		float mspb = (k[0] << 16) | (k[1] << 8) | (k[2]);
+		float spt = mspb / 1e+6 / timeDivision;
+		if(tempos.size() != 0) tempos[tempos.size() - 1].endTime = totalTicks;
+		tempos.push_back(Tempo{ totalTicks, spt, -1 });
+		break;
+	}
+}
+
+void parseMetaTrack(MidiChunk& chunk) {
+	uint8_t prevMsg = 0;
+	while (MidiIsReadable(chunk)) {
+		totalTicks += MidiPopVL(chunk);
+		uint8_t ev = MidiPopByte(chunk);
+		if (ev == 0xFF) {//meta event
+			uint8_t code = MidiPopByte(chunk);
+			int length = MidiPopVL(chunk);
+			parseMidiMetaEvent(code, length, MidiPointer(chunk));
+			chunk.index += length;
+		}
+		else if (ev & 0x80) {
+			prevMsg = ev;
+			chunk.index += parseMidiMessage(prevMsg, MidiPointer(chunk));
+		}
+		else {
+			chunk.index += parseMidiMessage(prevMsg, MidiPointer(chunk) - 1) - 1;
+		}
+	}
+	notes.clear();
+	totalTicks = 0;
+	prevTotalTicks = 0;
+	prevNote = 0;
+	depth = 0;
+	totalTime = 0;
+	prevTotalTime = 0;
+}
+
+void parseTrack(MidiChunk& chunk) {
+	uint8_t prevMsg = 0;
+	while (MidiIsReadable(chunk)) {
+		totalTicks += MidiPopVL(chunk);
+		while (prevTotalTicks != totalTicks) {
+			Tempo t = getTempo(prevTotalTicks);
+			int maxTicks = 0;
+			if (totalTicks < t.endTime || t.endTime == -1) {
+				maxTicks = totalTicks - prevTotalTicks;
+			}
+			else  {
+				maxTicks = t.endTime - prevTotalTicks;
+			}
+			totalTime += maxTicks * t.spt;
+			prevTotalTicks += maxTicks;
+		}
+		uint8_t ev = MidiPopByte(chunk);
+		if (ev == 0xFF) {//meta event
+			uint8_t code = MidiPopByte(chunk);
+			int length = MidiPopVL(chunk);
+			chunk.index += length;
+		}
+		else if (ev & 0x80) {
+			prevMsg = ev;
+			chunk.index += parseMidiMessage(prevMsg, MidiPointer(chunk));
+		}
+		else {
+			chunk.index += parseMidiMessage(prevMsg, MidiPointer(chunk)-1) - 1;
+		}
+	}
 }
 
 void parseMidi(std::fstream& s) {
@@ -86,28 +272,55 @@ void parseMidi(std::fstream& s) {
 	int length = s.tellg();
 	s.seekg(0, s.beg);
 
-	char* a = new char[length];
-	s.read(a, length);
+	uint8_t* a = new uint8_t[length];
+	s.read((char*)a, length);
 
-	uint16_t divisions = *(uint16_t*)(a + 12);
+	MidiChunk chunk = { (MidiChunkData*)a };
+	int formatType = MidiPopWord(chunk);
+	int tracks = MidiPopWord(chunk);
+	std::cout << "track (" << tracks << "): " << std::endl;
+	int trackTarget;
+	std::cin >> trackTarget;
+	timeDivision = MidiPopWord(chunk);
+	std::cout << "depth Target: " << std::endl;
+	std::cin >> depthTarget;
+	depthTarget--;
+
+	MidiChunk c = MidiNextChunk(chunk);
+	parseMetaTrack(c);
+	for (int i = 0; i < trackTarget; i++) {
+		chunk = MidiNextChunk(chunk);
+	}
+
+	parseTrack(chunk);
+	std::cout << std::endl << "TRACK " << (trackTarget) << std::endl;
+	printNotes();
+	notes.clear();
 }
 
-std::vector<Note> notes{};
-char out[16384];
 int main(int argc, const char* argv[]) {
-	std::cout << "enter file path:" << std::endl;
 	char file[256];
-	std::cin >> file;
-	std::fstream stream {file,std::ios::in};
+	if (argc >= 2) {
+		strcpy_s(file,argv[1]);
+	}
+	else {
+		std::cout << "enter file path:" << std::endl;
+		std::cin.getline(file, 256);
+	}
+	std::fstream stream {file,std::ios::in | std::ios::binary };
 	if (!stream)
 		throw 2;
 
-	int i;
-	for (i = 0; file[i]; i++);
+	int i = 0;
+	for (; file[i]; i++);
 	for (; i > 0 && file[i] != '.'; i--);
 	if (i == 0)
 		throw 3;
 	i++;
 	if (!strcmp(file + i, "txt")) parseTxt(stream);
-	if (!strcmp(file + i, "midi")) parseMidi(stream);
+	if (!strcmp(file + i, "mid")) parseMidi(stream);
+	char v;
+	std::cin >> v;
 }
+
+//C:\Users\Stamp\Downloads\Untitled score.mid

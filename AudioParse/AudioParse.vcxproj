@@ -132,6 +132,9 @@
   <ItemGroup>
     <None Include="..\..\..\..\Downloads\Untitled score.mid" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="midi.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
