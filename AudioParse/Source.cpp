@@ -63,19 +63,32 @@ struct Note {
 std::vector<Note> notes{};
 char out[50000];
 
+void fixNotes() {
+	for (size_t i = 0; i < notes.size() - 1; i++) {
+		if (notes[i].HZ == 0 && notes[i + 1].HZ == 0) {
+			notes[i].length += notes[i+1].length;
+			notes.erase(i + 1 + notes.begin());
+			i--;
+		}
+	}
+}
+
 void printNotes() {
 	int index = 0;
 	out[index++] = '[';
 	float hz = 0;
 	float time = 0;
-	for (size_t i = 0; i < notes.size(); i++) {
-		index += notes[i].Append(out + index, sizeof(out) - index, time, hz);
-		if (i != notes.size() - 1) out[index++] = ',';
+	fixNotes();
+	try {
+		for (size_t i = 0; i < notes.size(); i++) {
+			index += notes[i].Append(out + index, sizeof(out) - index, time, hz);
+			if (i != notes.size() - 1) out[index++] = ',';
+		}
 	}
+	catch (int e) {}
 	out[index++] = ']';
 	out[index] = 0;
 	printf(out);
-	char arr[256];
 }
 
 void parseTxt(std::fstream& s) {
@@ -121,6 +134,7 @@ int prevTotalTicks = 0;
 int prevNote = 0;
 int depth = 0;
 int depthTarget = 0;
+int channelTarget = 0;
 int timeDivision = 0;
 std::vector<Tempo> tempos{ };
 int ticksPerBeat = 0;
@@ -146,31 +160,35 @@ int parseMidiMessage(uint8_t status, uint8_t* k) {
 	float timeGap = (totalTime - prevTotalTime);
 	switch (high) {
 	case 0x8:
-		notes.push_back(Note{ (uint8_t)prevNote, timeGap });
-		prevNote = 0;
-		prevTotalTime = totalTime;
-		return 2;
-	case 0x9:
-		if (k[1] == 0 && depth >= depthTarget) {
-			notes.push_back(Note{ prevNote, timeGap });
+		if (low == channelTarget) {
+			notes.push_back(Note{ (uint8_t)prevNote, timeGap });
 			prevNote = 0;
-			depth = 0;
 			prevTotalTime = totalTime;
 		}
-		else {
-			if (timeGap != 0) depth = 0;
-			if (prevNote == 0) {
-				if (timeGap > 0) {
-					notes.push_back(Note{ 0, timeGap });
-					prevTotalTime = totalTime;
-				}
-			}
-			else if(depth == depthTarget) {
-				notes.push_back(Note{ (uint8_t)prevNote, timeGap });
+		return 2;
+	case 0x9:
+		if (low == channelTarget) {
+			if (k[1] == 0 && depth >= depthTarget) {
+				notes.push_back(Note{ prevNote, timeGap });
+				prevNote = 0;
+				depth = 0;
 				prevTotalTime = totalTime;
 			}
-			if(depth == depthTarget) prevNote = k[0];
-			depth++;
+			else {
+				if (timeGap != 0) depth = 0;
+				if (prevNote == 0) {
+					if (timeGap > 0) {
+						notes.push_back(Note{ 0, timeGap });
+						prevTotalTime = totalTime;
+					}
+				}
+				else if (depth == depthTarget) {
+					notes.push_back(Note{ (uint8_t)prevNote, timeGap });
+					prevTotalTime = totalTime;
+				}
+				if (depth == depthTarget) prevNote = k[0];
+				depth++;
+			}
 		}
 		return 2;
 	case 0xA:
@@ -282,9 +300,13 @@ void parseMidi(std::fstream& s) {
 	int trackTarget;
 	std::cin >> trackTarget;
 	timeDivision = MidiPopWord(chunk);
-	std::cout << "depth Target: " << std::endl;
+	std::cout << "parallel depth Target (>=1): " << std::endl;
 	std::cin >> depthTarget;
 	depthTarget--;
+	std::cout << "(drums only on channel 10) " << std::endl;
+	std::cout << "channel Target (>=1): " << std::endl;
+	std::cin >> channelTarget;
+	channelTarget--;
 
 	MidiChunk c = MidiNextChunk(chunk);
 	parseMetaTrack(c);
@@ -317,10 +339,17 @@ int main(int argc, const char* argv[]) {
 	if (i == 0)
 		throw 3;
 	i++;
-	if (!strcmp(file + i, "txt")) parseTxt(stream);
-	if (!strcmp(file + i, "mid")) parseMidi(stream);
-	char v;
-	std::cin >> v;
+	while (true) {
+		system("cls");
+		stream.seekg(0, std::ios::beg);
+		notes = {};
+		if (!strcmp(file + i, "txt")) parseTxt(stream);
+		if (!strcmp(file + i, "mid")) parseMidi(stream);
+		std::cout << std::endl;
+		std::cin.get();
+		std::cin.ignore();
+
+	}
 }
 
 //C:\Users\Stamp\Downloads\Untitled score.mid
