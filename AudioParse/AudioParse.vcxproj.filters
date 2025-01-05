@@ -28,5 +28,14 @@
     <ClInclude Include="midi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="v1.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="v2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="v3.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
