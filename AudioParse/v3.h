@@ -371,7 +371,7 @@ void parseTrack(MidiChunk& chunk) {
 		}
 	}
 
-	RemoveNoteBuffer((uint8_t)buffer[depthTarget].note, 0, 0, totalTime - buffer[depthTarget].start);
+	notes.push_back({0,0,0,0});
 }
 
 void parseMidi(std::fstream& s) {
