@@ -129,12 +129,12 @@ void parseTxt(std::fstream& s) {
 	printNotes();
 }
 
-int parseVariedLengthValue(const uint8_t* ptr, int& v) {
-	v = 0;
+int parseVariedLengthValue(const uint8_t* ptr, int& outputValue) {
+	outputValue = 0;
 	int a = 0;
 	do {
-		v <<= 7;
-		v |= *ptr & 0x7F;
+		outputValue <<= 7;
+		outputValue |= *ptr & 0x7F;
 	} while (*(ptr + a++) & 0x80);
 	return a;
 }
